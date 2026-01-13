@@ -1,0 +1,13 @@
+# conf/llm/kimi-k2.yaml
+# Gitee AI - Kimi-K2-Thinking 模型配置
+defaults:
+  - default
+  - _self_
+
+provider: "openai"  # 使用 OpenAI 兼容接口
+model_name: "Kimi-K2-Thinking"
+base_url: "https://ai.gitee.com/v1"
+api_key: "OSJREE4XTKVPKCP61ODL7AMZ2AAG37VAFQXG3H1Q"
+max_context_length: 131072
+max_tokens: 8192
+temperature: 0.7

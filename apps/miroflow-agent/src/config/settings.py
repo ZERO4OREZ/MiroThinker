@@ -64,6 +64,9 @@ SUMMARY_LLM_API_KEY = os.environ.get("SUMMARY_LLM_API_KEY")
 SUMMARY_LLM_BASE_URL = os.environ.get("SUMMARY_LLM_BASE_URL")
 SUMMARY_LLM_MODEL_NAME = os.environ.get("SUMMARY_LLM_MODEL_NAME")
 
+# API for GitHub
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+
 
 # MCP server configuration generation function
 def create_mcp_server_parameters(cfg: DictConfig, agent_cfg: DictConfig):
@@ -370,6 +373,26 @@ def create_mcp_server_parameters(cfg: DictConfig, agent_cfg: DictConfig):
                         "miroflow_tools.dev_mcp_servers.task_planner",
                     ],
                     env={"TASK_ID": todo_task_id},
+                ),
+            }
+        )
+
+    if (
+        agent_cfg.get("tools", None) is not None
+        and "tool-github" in agent_cfg["tools"]
+    ):
+        if not GITHUB_TOKEN:
+            raise ValueError(
+                "GITHUB_TOKEN not set, tool-github will be unavailable."
+            )
+
+        configs.append(
+            {
+                "name": "tool-github",
+                "params": StdioServerParameters(
+                    command=sys.executable,
+                    args=["-m", "miroflow_tools.mcp_servers.github_mcp_server"],
+                    env={"GITHUB_TOKEN": GITHUB_TOKEN},
                 ),
             }
         )

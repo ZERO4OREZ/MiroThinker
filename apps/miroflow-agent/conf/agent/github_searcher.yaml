@@ -1,0 +1,20 @@
+# conf/agent/github_searcher.yaml
+# 用于 GitHub 搜索的智能体配置
+# 可以搜索代码、仓库、Issues、PRs，获取文件内容和目录列表
+defaults:
+  - default
+  - _self_
+
+main_agent:
+  tools:
+    - tool-github          # GitHub 搜索和内容获取
+    - tool-python          # 代码执行（可选，用于分析代码）
+  tool_blacklist:
+    - [ "tool-python", "download_file_from_sandbox_to_local" ]
+  max_turns: 100  # Maximum number of turns for main agent execution
+
+sub_agents:
+
+# Settings for context management
+keep_tool_result: 5
+context_compress_limit: 5  # Enable context compression (>0 = enabled, 0 = disabled).

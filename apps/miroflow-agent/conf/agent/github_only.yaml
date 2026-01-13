@@ -1,0 +1,17 @@
+# conf/agent/github_only.yaml
+# 纯 GitHub 搜索 - 只需要 GITHUB_TOKEN 和 LLM API
+# 不需要 SERPER、JINA、E2B
+defaults:
+  - default
+  - _self_
+
+main_agent:
+  tools:
+    - tool-github
+  tool_blacklist: []
+  max_turns: 50
+
+sub_agents:
+
+keep_tool_result: 5
+context_compress_limit: 5

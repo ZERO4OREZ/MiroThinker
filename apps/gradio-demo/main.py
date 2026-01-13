@@ -527,6 +527,205 @@ def _format_search_results(tool_input: dict, tool_output: dict) -> str:
     return "\n".join(lines)
 
 
+def _format_github_search_repos(tool_input: dict, tool_output: dict) -> str:
+    """Format github_search_repos results in a beautiful card layout."""
+    lines = []
+
+    # Get search query from input
+    query = ""
+    if isinstance(tool_input, dict):
+        query = tool_input.get("q", "") or tool_input.get("query", "")
+
+    # Parse results from output
+    results = []
+    if isinstance(tool_output, dict):
+        result_str = tool_output.get("result", "")
+        if isinstance(result_str, str) and result_str.strip():
+            try:
+                result_data = json.loads(result_str)
+                if isinstance(result_data, dict):
+                    results = result_data.get("items", [])
+            except json.JSONDecodeError:
+                pass
+        elif isinstance(result_str, dict):
+            results = result_str.get("items", [])
+        if not results and "items" in tool_output:
+            results = tool_output.get("items", [])
+
+    if not results and not query:
+        return ""
+
+    # Build the card
+    lines.append('<div class="search-card">')
+
+    # Header with query
+    if query:
+        lines.append('<div class="search-header">')
+        lines.append('<span class="search-icon">🐙</span>')
+        lines.append(f'<span class="search-query">GitHub Repos: "{query}"</span>')
+        lines.append("</div>")
+
+    # Results count
+    if results:
+        lines.append(f'<div class="search-count">≡ Found {len(results)} repositories</div>')
+
+        # Results list
+        lines.append('<div class="search-results">')
+        for item in results[:10]:
+            full_name = item.get("full_name", "Unknown")
+            description = item.get("description", "")[:60] or "No description"
+            if len(item.get("description", "")) > 60:
+                description += "..."
+            stars = item.get("stargazers_count", 0)
+            url = item.get("html_url", f"https://github.com/{full_name}")
+
+            lines.append(f"""<a href="{url}" target="_blank" class="search-result-item">
+                <span class="result-icon">📦</span>
+                <span class="result-title">{full_name} ⭐{stars}</span>
+                <span class="result-desc">{description}</span>
+            </a>""")
+        lines.append("</div>")
+
+    lines.append("</div>")
+    return "\n".join(lines)
+
+
+def _format_github_search_code(tool_input: dict, tool_output: dict) -> str:
+    """Format github_search_code results in a beautiful card layout."""
+    lines = []
+
+    query = ""
+    if isinstance(tool_input, dict):
+        query = tool_input.get("q", "") or tool_input.get("query", "")
+
+    results = []
+    if isinstance(tool_output, dict):
+        result_str = tool_output.get("result", "")
+        if isinstance(result_str, str) and result_str.strip():
+            try:
+                result_data = json.loads(result_str)
+                if isinstance(result_data, dict):
+                    results = result_data.get("items", [])
+            except json.JSONDecodeError:
+                pass
+        elif isinstance(result_str, dict):
+            results = result_str.get("items", [])
+        if not results and "items" in tool_output:
+            results = tool_output.get("items", [])
+
+    if not results and not query:
+        return ""
+
+    lines.append('<div class="search-card">')
+
+    if query:
+        lines.append('<div class="search-header">')
+        lines.append('<span class="search-icon">💻</span>')
+        lines.append(f'<span class="search-query">GitHub Code: "{query}"</span>')
+        lines.append("</div>")
+
+    if results:
+        lines.append(f'<div class="search-count">≡ Found {len(results)} code files</div>')
+
+        lines.append('<div class="search-results">')
+        for item in results[:10]:
+            repo = item.get("repository", {}).get("full_name", "Unknown")
+            path = item.get("path", "")
+            url = item.get("html_url", "#")
+
+            lines.append(f"""<a href="{url}" target="_blank" class="search-result-item">
+                <span class="result-icon">📄</span>
+                <span class="result-title">{repo}/{path}</span>
+            </a>""")
+        lines.append("</div>")
+
+    lines.append("</div>")
+    return "\n".join(lines)
+
+
+def _format_github_search_issues(tool_input: dict, tool_output: dict) -> str:
+    """Format github_search_issues results in a beautiful card layout."""
+    lines = []
+
+    query = ""
+    if isinstance(tool_input, dict):
+        query = tool_input.get("q", "") or tool_input.get("query", "")
+
+    results = []
+    if isinstance(tool_output, dict):
+        result_str = tool_output.get("result", "")
+        if isinstance(result_str, str) and result_str.strip():
+            try:
+                result_data = json.loads(result_str)
+                if isinstance(result_data, dict):
+                    results = result_data.get("items", [])
+            except json.JSONDecodeError:
+                pass
+        elif isinstance(result_str, dict):
+            results = result_str.get("items", [])
+        if not results and "items" in tool_output:
+            results = tool_output.get("items", [])
+
+    if not results and not query:
+        return ""
+
+    lines.append('<div class="search-card">')
+
+    if query:
+        lines.append('<div class="search-header">')
+        lines.append('<span class="search-icon">📋</span>')
+        lines.append(f'<span class="search-query">GitHub Issues/PRs: "{query}"</span>')
+        lines.append("</div>")
+
+    if results:
+        lines.append(f'<div class="search-count">≡ Found {len(results)} issues/PRs</div>')
+
+        lines.append('<div class="search-results">')
+        for item in results[:10]:
+            title = item.get("title", "Untitled")[:50]
+            if len(item.get("title", "")) > 50:
+                title += "..."
+            url = item.get("html_url", "#")
+            state = item.get("state", "")
+            is_pr = "pull_request" in item
+            icon = "🔀" if is_pr else ("🟢" if state == "open" else "🔴")
+
+            lines.append(f"""<a href="{url}" target="_blank" class="search-result-item">
+                <span class="result-icon">{icon}</span>
+                <span class="result-title">{title}</span>
+            </a>""")
+        lines.append("</div>")
+
+    lines.append("</div>")
+    return "\n".join(lines)
+
+
+def _format_github_file_content(tool_input: dict, tool_output: dict) -> str:
+    """Format github_get_file_content results."""
+    lines = []
+
+    repo = ""
+    path = ""
+    if isinstance(tool_input, dict):
+        repo = tool_input.get("repo", "")
+        path = tool_input.get("path", "")
+
+    if not repo:
+        return ""
+
+    url = f"https://github.com/{repo}/blob/main/{path}" if path else f"https://github.com/{repo}"
+
+    lines.append('<div class="scrape-card">')
+    lines.append('<div class="scrape-header">')
+    lines.append('<span class="scrape-icon">📄</span>')
+    lines.append(f'<a href="{url}" target="_blank" class="scrape-url">{repo}/{path}</a>')
+    lines.append("</div>")
+    lines.append('<div class="scrape-status success">✓ Content fetched</div>')
+    lines.append("</div>")
+
+    return "\n".join(lines)
+
+
 def _format_sogou_search_results(tool_input: dict, tool_output: dict) -> str:
     """Format sogou_search results in a beautiful card layout."""
     lines = []
@@ -668,6 +867,31 @@ def _render_markdown(state: dict) -> str:
             # Special formatting for sogou_search
             if tool_name == "sogou_search" and (has_input or has_output):
                 formatted = _format_sogou_search_results(tool_input, tool_output)
+                if formatted:
+                    lines.append(formatted)
+                continue
+
+            # Special formatting for GitHub tools
+            if tool_name == "github_search_repos" and (has_input or has_output):
+                formatted = _format_github_search_repos(tool_input, tool_output)
+                if formatted:
+                    lines.append(formatted)
+                continue
+
+            if tool_name == "github_search_code" and (has_input or has_output):
+                formatted = _format_github_search_code(tool_input, tool_output)
+                if formatted:
+                    lines.append(formatted)
+                continue
+
+            if tool_name == "github_search_issues" and (has_input or has_output):
+                formatted = _format_github_search_issues(tool_input, tool_output)
+                if formatted:
+                    lines.append(formatted)
+                continue
+
+            if tool_name in ("github_get_file_content", "github_list_directory") and (has_input or has_output):
+                formatted = _format_github_file_content(tool_input, tool_output)
                 if formatted:
                     lines.append(formatted)
                 continue
