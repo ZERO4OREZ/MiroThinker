@@ -146,7 +146,7 @@ class OpenAIClient(BaseClient):
             if self.repetition_penalty != 1.0:
                 params["extra_body"]["repetition_penalty"] = self.repetition_penalty
 
-            if "deepseek-v3-1" in self.model_name:
+            if "deepseek-v3-1" in self.model_name or "MiroThinker" in self.model_name:
                 params["extra_body"]["thinking"] = {"type": "enabled"}
 
             # auto-detect if we need to continue from the last assistant message

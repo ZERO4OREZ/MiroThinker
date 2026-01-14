@@ -836,6 +836,10 @@ class Orchestrator:
 
             # Process LLM response
             if assistant_response_text:
+                # DEBUG: 打印原始响应内容的前 500 字符
+                _raw = assistant_response_text[:500] if isinstance(assistant_response_text, str) else str(assistant_response_text)[:500]
+                self.task_log.log_step("debug", "Main Agent | Raw Response", f"First 500 chars: {_raw}")
+                
                 text_response = extract_llm_response_text(assistant_response_text)
                 if text_response:
                     await self.stream.tool_call("show_text", {"text": text_response})

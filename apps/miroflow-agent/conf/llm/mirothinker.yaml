@@ -1,0 +1,16 @@
+# conf/llm/mirothinker.yaml
+# MiroThinker v1.5 30B 模型配置
+# 部署在: http://106.75.235.222:18080/mirothinker-v1.5-30b/v1/chat/completions
+defaults:
+  - default
+  - _self_
+
+provider: "openai"  # 使用 OpenAI 兼容接口
+model_name: "MiroThinker-v1.5-30B"
+base_url: "http://106.75.235.222:18080/mirothinker-v1.5-30b/v1"
+api_key: "not-needed"
+temperature: 1.0
+top_p: 0.95
+repetition_penalty: 1.05
+max_context_length: 262144
+max_tokens: 16384

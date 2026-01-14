@@ -421,27 +421,28 @@ def _init_render_state():
 
 
 def _format_think_content(text: str) -> str:
-    """Convert <think> tags to readable markdown format."""
+    """Convert <think> tags to collapsible thinking blocks."""
     import re
 
-    # Replace <think> tags with blockquote format (no label)
-    text = re.sub(r"<think>\s*", "\n> ", text)
-    text = re.sub(r"\s*</think>", "\n", text)
-    # Convert newlines within thinking to blockquote continuation
-    lines = text.split("\n")
-    result = []
-    in_thinking = False
-    for line in lines:
-        if line.strip().startswith(">") and not in_thinking:
-            in_thinking = True
-            result.append(line)
-        elif in_thinking and line.strip() and not line.startswith(">"):
-            result.append(f"> {line}")
-        else:
-            if line.strip() == "" and in_thinking:
-                in_thinking = False
-            result.append(line)
-    return "\n".join(result)
+    # Find all <think>...</think> blocks and convert to collapsible HTML
+    def replace_think(match):
+        think_content = match.group(1).strip()
+        # Create a collapsible details block
+        return f'''
+<details class="thinking-block" open>
+<summary>▼ 思考过程</summary>
+<div class="thinking-content">
+
+{think_content}
+
+</div>
+</details>
+'''
+
+    # Replace <think>...</think> with collapsible blocks
+    text = re.sub(r'<think>(.*?)</think>', replace_think, text, flags=re.DOTALL)
+    
+    return text
 
 
 def _append_show_text(tool_entry: dict, delta: str):
@@ -512,7 +513,7 @@ def _format_search_results(tool_input: dict, tool_output: dict) -> str:
 
         # Results list
         lines.append('<div class="search-results">')
-        for item in results[:10]:  # Limit to 10 results
+        for item in results:  # Show all results
             title = item.get("title", "Untitled")
             link = item.get("link", "#")
 
@@ -544,18 +545,28 @@ def _format_github_search_repos(tool_input: dict, tool_output: dict) -> str:
             try:
                 result_data = json.loads(result_str)
                 if isinstance(result_data, dict):
-                    results = result_data.get("items", [])
+                    results = result_data.get("results", []) or result_data.get("items", [])
             except json.JSONDecodeError:
                 pass
         elif isinstance(result_str, dict):
-            results = result_str.get("items", [])
+            results = result_str.get("results", []) or result_str.get("items", [])
+        if not results and "results" in tool_output:
+            results = tool_output.get("results", [])
         if not results and "items" in tool_output:
             results = tool_output.get("items", [])
 
     if not results and not query:
         return ""
 
-    # Build the card
+    # Build the thinking step with search card inside
+    # 添加思考步骤包装器
+    lines.append('<div class="thinking-step">')
+    lines.append('<div class="thinking-header">🧠 AI 思考过程</div>')
+    if query:
+        lines.append(f'<div class="thinking-text"><strong>策略:</strong> 为了回答您的问题，我需要先在 GitHub 上搜索相关仓库，查找与 "{query}" 相关的项目和代码...</div>')
+    lines.append('<div class="thinking-actions">')
+    
+    # Build the search card
     lines.append('<div class="search-card">')
 
     # Header with query
@@ -571,10 +582,11 @@ def _format_github_search_repos(tool_input: dict, tool_output: dict) -> str:
 
         # Results list
         lines.append('<div class="search-results">')
-        for item in results[:10]:
+        for item in results:
             full_name = item.get("full_name", "Unknown")
-            description = item.get("description", "")[:60] or "No description"
-            if len(item.get("description", "")) > 60:
+            desc_raw = item.get("description") or ""
+            description = desc_raw[:60] if desc_raw else "No description"
+            if len(desc_raw) > 60:
                 description += "..."
             stars = item.get("stargazers_count", 0)
             url = item.get("html_url", f"https://github.com/{full_name}")
@@ -586,7 +598,9 @@ def _format_github_search_repos(tool_input: dict, tool_output: dict) -> str:
             </a>""")
         lines.append("</div>")
 
-    lines.append("</div>")
+    lines.append("</div>")  # 关闭 search-card
+    lines.append("</div>")  # 关闭 thinking-actions
+    lines.append("</div>")  # 关闭 thinking-step
     return "\n".join(lines)
 
 
@@ -605,16 +619,25 @@ def _format_github_search_code(tool_input: dict, tool_output: dict) -> str:
             try:
                 result_data = json.loads(result_str)
                 if isinstance(result_data, dict):
-                    results = result_data.get("items", [])
+                    results = result_data.get("results", []) or result_data.get("items", [])
             except json.JSONDecodeError:
                 pass
         elif isinstance(result_str, dict):
-            results = result_str.get("items", [])
+            results = result_str.get("results", []) or result_str.get("items", [])
+        if not results and "results" in tool_output:
+            results = tool_output.get("results", [])
         if not results and "items" in tool_output:
             results = tool_output.get("items", [])
 
     if not results and not query:
         return ""
+
+    # Build the thinking step with search card inside
+    lines.append('<div class="thinking-step">')
+    lines.append('<div class="thinking-header">🧠 AI 思考过程</div>')
+    if query:
+        lines.append(f'<div class="thinking-text"><strong>策略:</strong> 为了深入理解实现细节，我需要检索 GitHub 代码库中包含 "{query}" 的相关文件，重点关注核心逻辑和实现模式...</div>')
+    lines.append('<div class="thinking-actions">')
 
     lines.append('<div class="search-card">')
 
@@ -628,8 +651,12 @@ def _format_github_search_code(tool_input: dict, tool_output: dict) -> str:
         lines.append(f'<div class="search-count">≡ Found {len(results)} code files</div>')
 
         lines.append('<div class="search-results">')
-        for item in results[:10]:
-            repo = item.get("repository", {}).get("full_name", "Unknown")
+        for item in results:
+            repository = item.get("repository", "")
+            if isinstance(repository, dict):
+                repo = repository.get("full_name", "Unknown")
+            else:
+                repo = str(repository) if repository else "Unknown"
             path = item.get("path", "")
             url = item.get("html_url", "#")
 
@@ -639,7 +666,9 @@ def _format_github_search_code(tool_input: dict, tool_output: dict) -> str:
             </a>""")
         lines.append("</div>")
 
-    lines.append("</div>")
+    lines.append("</div>")  # 关闭 search-card
+    lines.append("</div>")  # 关闭 thinking-actions
+    lines.append("</div>")  # 关闭 thinking-step
     return "\n".join(lines)
 
 
@@ -658,16 +687,25 @@ def _format_github_search_issues(tool_input: dict, tool_output: dict) -> str:
             try:
                 result_data = json.loads(result_str)
                 if isinstance(result_data, dict):
-                    results = result_data.get("items", [])
+                    results = result_data.get("results", []) or result_data.get("items", [])
             except json.JSONDecodeError:
                 pass
         elif isinstance(result_str, dict):
-            results = result_str.get("items", [])
+            results = result_str.get("results", []) or result_str.get("items", [])
+        if not results and "results" in tool_output:
+            results = tool_output.get("results", [])
         if not results and "items" in tool_output:
             results = tool_output.get("items", [])
 
     if not results and not query:
         return ""
+
+    # Build the thinking step with search card inside
+    lines.append('<div class="thinking-step">')
+    lines.append('<div class="thinking-header">🧠 AI 思考过程</div>')
+    if query:
+        lines.append(f'<div class="thinking-text"><strong>策略:</strong> 我将通过搜索 GitHub Issues 和 Pull Requests ("{query}") 来寻找社区讨论、已知问题以及开发者的设计决策背景...</div>')
+    lines.append('<div class="thinking-actions">')
 
     lines.append('<div class="search-card">')
 
@@ -681,7 +719,7 @@ def _format_github_search_issues(tool_input: dict, tool_output: dict) -> str:
         lines.append(f'<div class="search-count">≡ Found {len(results)} issues/PRs</div>')
 
         lines.append('<div class="search-results">')
-        for item in results[:10]:
+        for item in results:
             title = item.get("title", "Untitled")[:50]
             if len(item.get("title", "")) > 50:
                 title += "..."
@@ -696,7 +734,9 @@ def _format_github_search_issues(tool_input: dict, tool_output: dict) -> str:
             </a>""")
         lines.append("</div>")
 
-    lines.append("</div>")
+    lines.append("</div>")  # 关闭 search-card
+    lines.append("</div>")  # 关闭 thinking-actions
+    lines.append("</div>")  # 关闭 thinking-step
     return "\n".join(lines)
 
 
@@ -771,7 +811,7 @@ def _format_sogou_search_results(tool_input: dict, tool_output: dict) -> str:
 
         # Results list
         lines.append('<div class="search-results">')
-        for item in results[:10]:  # Limit to 10 results
+        for item in results:  # Show all results
             title = item.get("title", "Untitled")
             link = item.get("url", item.get("link", "#"))
 
@@ -824,13 +864,13 @@ def _format_scrape_results(tool_input: dict, tool_output: dict) -> str:
 
 
 def _render_markdown(state: dict) -> str:
-    lines = []
-    final_summary_lines = []  # Collect final summary content separately
+    thinking_lines = []  # 思考过程内容
+    summary_lines = []   # 结论内容
 
     # Render errors first if any
     if state.get("errors"):
         for err in state["errors"]:
-            lines.append(f'<div class="error-block">❌ {err}</div>')
+            thinking_lines.append(f'<div class="error-block">❌ {err}</div>')
 
     # Render all agents' content
     for agent_id in state.get("agent_order", []):
@@ -842,14 +882,19 @@ def _render_markdown(state: dict) -> str:
             call = agent["tools"].get(call_id, {})
             tool_name = call.get("tool_name", "unknown_tool")
 
-            # Show text / message - display directly
+            # Show text / message - this starts a new thinking step
             if tool_name in ("show_text", "message"):
                 content = call.get("content", "")
                 if content:
                     if is_final_summary:
-                        final_summary_lines.append(content)
+                        summary_lines.append(content)
                     else:
-                        lines.append(content)
+                        # 开始一个新的思考步骤块
+                        thinking_lines.append('<div class="thinking-step">')
+                        thinking_lines.append('<div class="thinking-header">💭 思考过程</div>')
+                        thinking_lines.append(f'<div class="thinking-text">{content}</div>')
+                        # 注意：不在这里关闭 div，让后续操作也包含在内
+                        thinking_lines.append('<div class="thinking-actions">')
                 continue
 
             tool_input = call.get("input", {})
@@ -861,39 +906,39 @@ def _render_markdown(state: dict) -> str:
             if tool_name == "google_search" and (has_input or has_output):
                 formatted = _format_search_results(tool_input, tool_output)
                 if formatted:
-                    lines.append(formatted)
+                    thinking_lines.append(formatted)
                 continue
 
             # Special formatting for sogou_search
             if tool_name == "sogou_search" and (has_input or has_output):
                 formatted = _format_sogou_search_results(tool_input, tool_output)
                 if formatted:
-                    lines.append(formatted)
+                    thinking_lines.append(formatted)
                 continue
 
             # Special formatting for GitHub tools
             if tool_name == "github_search_repos" and (has_input or has_output):
                 formatted = _format_github_search_repos(tool_input, tool_output)
                 if formatted:
-                    lines.append(formatted)
+                    thinking_lines.append(formatted)
                 continue
 
             if tool_name == "github_search_code" and (has_input or has_output):
                 formatted = _format_github_search_code(tool_input, tool_output)
                 if formatted:
-                    lines.append(formatted)
+                    thinking_lines.append(formatted)
                 continue
 
             if tool_name == "github_search_issues" and (has_input or has_output):
                 formatted = _format_github_search_issues(tool_input, tool_output)
                 if formatted:
-                    lines.append(formatted)
+                    thinking_lines.append(formatted)
                 continue
 
             if tool_name in ("github_get_file_content", "github_list_directory") and (has_input or has_output):
                 formatted = _format_github_file_content(tool_input, tool_output)
                 if formatted:
-                    lines.append(formatted)
+                    thinking_lines.append(formatted)
                 continue
 
             # Special formatting for scrape/webpage tools
@@ -905,14 +950,14 @@ def _render_markdown(state: dict) -> str:
             ) and (has_input or has_output):
                 formatted = _format_scrape_results(tool_input, tool_output)
                 if formatted:
-                    lines.append(formatted)
+                    thinking_lines.append(formatted)
                 continue
 
             # Special formatting for code execution tools
             if tool_name in ("python", "run_python_code") and (has_input or has_output):
                 # Use pure Markdown to avoid HTML wrapper blocking Markdown rendering
-                lines.append("\n---\n")
-                lines.append("#### 💻 Code Execution\n")
+                thinking_lines.append("\n---\n")
+                thinking_lines.append("#### 💻 Code Execution\n")
                 # Show code input - try multiple possible keys
                 code = ""
                 if isinstance(tool_input, dict):
@@ -920,7 +965,7 @@ def _render_markdown(state: dict) -> str:
                 elif isinstance(tool_input, str):
                     code = tool_input
                 if code:
-                    lines.append(f"\n```python\n{code}\n```\n")
+                    thinking_lines.append(f"\n```python\n{code}\n```\n")
                 # Show output if available
                 if has_output:
                     output = ""
@@ -934,16 +979,16 @@ def _render_markdown(state: dict) -> str:
                     elif isinstance(tool_output, str):
                         output = tool_output
                     if isinstance(output, str) and output.strip():
-                        lines.append("\n**Output:**\n")
-                        lines.append(
+                        thinking_lines.append("\n**Output:**\n")
+                        thinking_lines.append(
                             f'\n```text\n{output[:1000]}{"..." if len(output) > 1000 else ""}\n```\n'
                         )
-                lines.append("\n✅ Executed\n")
+                thinking_lines.append("\n✅ Executed\n")
                 continue
 
             # Other tools - show as compact card
             if has_input or has_output:
-                target_lines = final_summary_lines if is_final_summary else lines
+                target_lines = summary_lines if is_final_summary else thinking_lines
                 target_lines.append('<div class="tool-card">')
                 target_lines.append(f'<div class="tool-header">🔧 {tool_name}</div>')
                 if has_input:
@@ -960,13 +1005,36 @@ def _render_markdown(state: dict) -> str:
                     target_lines.append('<div class="tool-status">✓ Done</div>')
                 target_lines.append("</div>")
 
-    # Add final summary with Markdown-based styling (no HTML wrapper to preserve Markdown rendering)
-    if final_summary_lines:
-        lines.append("\n\n---\n\n")  # Markdown horizontal rule as divider
-        lines.append("## 📋 Research Summary\n\n")
-        lines.extend(final_summary_lines)
+    # 构建最终输出：思考过程区块 + 结论区块
+    output_lines = []
+    
+    # 关闭最后一个未关闭的步骤块
+    if thinking_lines:
+        # 检查是否有未关闭的步骤块（通过检查最后是否有 thinking-actions 开标签）
+        content = "\n".join(thinking_lines)
+        if '<div class="thinking-actions">' in content:
+            thinking_lines.append('</div>')  # 关闭 thinking-actions
+            thinking_lines.append('</div>')  # 关闭 thinking-step
+    
+    # 思考过程区块（可折叠）
+    if thinking_lines:
+        output_lines.append('<details class="research-thinking" open>')
+        output_lines.append('<summary class="thinking-toggle">≡ 隐藏思考过程 ∧</summary>')
+        output_lines.append('<div class="thinking-container">')
+        output_lines.extend(thinking_lines)
+        output_lines.append('</div>')
+        output_lines.append('</details>')
+    
+    # 结论区块
+    if summary_lines:
+        output_lines.append('<div class="research-summary">')
+        output_lines.append('<div class="summary-header">⊙ 总结</div>')
+        output_lines.append('<div class="summary-content">')
+        output_lines.extend(summary_lines)
+        output_lines.append('</div>')
+        output_lines.append('</div>')
 
-    return "\n".join(lines) if lines else "*Waiting to start research...*"
+    return "\n".join(output_lines) if output_lines else "*Waiting to start research...*"
 
 
 def _update_state_with_event(state: dict, message: dict):
@@ -1004,6 +1072,7 @@ def _update_state_with_event(state: dict, message: dict):
         entry = tools[tool_call_id]
         if tool_name == "show_text" and "delta_input" in data:
             delta = data.get("delta_input", {}).get("text", "")
+            print(f"[DEBUG] show_text delta: {delta[:100]}..." if len(delta) > 100 else f"[DEBUG] show_text delta: {delta}")
             _append_show_text(entry, delta)
         elif tool_name == "show_text" and "tool_input" in data:
             ti = data.get("tool_input")
@@ -1355,13 +1424,17 @@ def build_demo():
     }
     
     #log-view {
-        padding: 24px !important;
-        min-height: 400px;
-        max-height: 70vh;
-        overflow-y: auto;
-        background: #ffffff !important;
-        border: 1px solid #e5e5e5 !important;
-        border-radius: 16px !important;
+        padding: 0 !important;
+        background: transparent !important;
+        border: none !important;
+        border-radius: 0 !important;
+        max-height: none !important;
+        overflow: visible !important;
+    }
+    
+    #log-view > div {
+        max-height: none !important;
+        overflow: visible !important;
     }
     
     #log-view h3 {
@@ -1584,6 +1657,139 @@ def build_demo():
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+    }
+    
+    /* ===== Research Thinking Block (Collapsible) ===== */
+    .research-thinking {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        margin-bottom: 20px;
+        overflow: hidden;
+    }
+    
+    .thinking-toggle {
+        display: block;
+        padding: 16px 24px;
+        cursor: pointer;
+        font-weight: 500;
+        font-size: 0.95em;
+        color: #64748b;
+        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        border-bottom: 1px solid #e2e8f0;
+        user-select: none;
+        list-style: none;
+        text-align: center;
+    }
+    
+    .thinking-toggle::-webkit-details-marker {
+        display: none;
+    }
+    
+    .research-thinking[open] .thinking-toggle {
+        border-bottom: 1px solid #e2e8f0;
+    }
+    
+    .research-thinking:not([open]) .thinking-toggle {
+        border-bottom: none;
+    }
+    
+    .thinking-container {
+        padding: 20px 24px;
+    }
+    
+    .thinking-step {
+        background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+        border: 1px solid #bae6fd;
+        border-radius: 10px;
+        padding: 16px 20px;
+        margin: 12px 0;
+    }
+    
+    .thinking-text {
+        color: #0c4a6e;
+        font-size: 0.95em;
+        line-height: 1.7;
+        white-space: pre-wrap;
+        margin-bottom: 12px;
+    }
+    
+    .thinking-header {
+        font-weight: 600;
+        color: #0369a1;
+        font-size: 0.9em;
+        margin-bottom: 10px;
+    }
+    
+    .thinking-actions {
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid #bae6fd;
+    }
+    
+    /* ===== Research Summary Block ===== */
+    .research-summary {
+        background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+        border: 1px solid #a7f3d0;
+        border-radius: 12px;
+        margin-top: 20px;
+        overflow: hidden;
+    }
+    
+    .summary-header {
+        padding: 16px 24px;
+        font-weight: 600;
+        font-size: 0.95em;
+        color: #047857;
+        background: rgba(255, 255, 255, 0.5);
+        border-bottom: 1px solid #a7f3d0;
+        text-align: center;
+    }
+    
+    .summary-content {
+        padding: 20px 24px;
+        color: #064e3b;
+        line-height: 1.8;
+    }
+    
+    /* ===== Thinking Block ===== */
+    .thinking-block {
+        background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+        border: 1px solid #bae6fd;
+        border-radius: 10px;
+        margin: 12px 0;
+        overflow: hidden;
+    }
+    
+    .thinking-block summary {
+        padding: 12px 18px;
+        cursor: pointer;
+        font-weight: 500;
+        color: #0369a1;
+        background: rgba(255, 255, 255, 0.5);
+        border-bottom: 1px solid #bae6fd;
+        user-select: none;
+        list-style: none;
+    }
+    
+    .thinking-block summary::-webkit-details-marker {
+        display: none;
+    }
+    
+    .thinking-block[open] summary {
+        border-bottom: 1px solid #bae6fd;
+    }
+    
+    .thinking-block:not([open]) summary {
+        border-bottom: none;
+    }
+    
+    .thinking-content {
+        padding: 16px 18px;
+        color: #0c4a6e;
+        font-size: 0.9em;
+        line-height: 1.6;
+        white-space: pre-wrap;
     }
     
     /* ===== Scrape Card ===== */
