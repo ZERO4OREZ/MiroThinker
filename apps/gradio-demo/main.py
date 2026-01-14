@@ -430,11 +430,9 @@ def _format_think_content(text: str) -> str:
         # Create a collapsible details block
         return f'''
 <details class="thinking-block" open>
-<summary>▼ 思考过程</summary>
+<summary class="thinking-summary"><span class="thinking-icon">⌄</span> 思考过程</summary>
 <div class="thinking-content">
-
 {think_content}
-
 </div>
 </details>
 '''
@@ -558,14 +556,6 @@ def _format_github_search_repos(tool_input: dict, tool_output: dict) -> str:
     if not results and not query:
         return ""
 
-    # Build the thinking step with search card inside
-    # 添加思考步骤包装器
-    lines.append('<div class="thinking-step">')
-    lines.append('<div class="thinking-header">🔍 搜索操作</div>')
-    if query:
-        lines.append(f'<div class="thinking-text">正在搜索 GitHub 仓库："{query}"</div>')
-    lines.append('<div class="thinking-actions">')
-    
     # Build the search card
     lines.append('<div class="search-card">')
 
@@ -599,8 +589,6 @@ def _format_github_search_repos(tool_input: dict, tool_output: dict) -> str:
         lines.append("</div>")
 
     lines.append("</div>")  # 关闭 search-card
-    lines.append("</div>")  # 关闭 thinking-actions
-    lines.append("</div>")  # 关闭 thinking-step
     return "\n".join(lines)
 
 
@@ -632,13 +620,6 @@ def _format_github_search_code(tool_input: dict, tool_output: dict) -> str:
     if not results and not query:
         return ""
 
-    # Build the thinking step with search card inside
-    lines.append('<div class="thinking-step">')
-    lines.append('<div class="thinking-header">🔍 搜索操作</div>')
-    if query:
-        lines.append(f'<div class="thinking-text">正在搜索 GitHub 代码："{query}"</div>')
-    lines.append('<div class="thinking-actions">')
-
     lines.append('<div class="search-card">')
 
     if query:
@@ -667,8 +648,6 @@ def _format_github_search_code(tool_input: dict, tool_output: dict) -> str:
         lines.append("</div>")
 
     lines.append("</div>")  # 关闭 search-card
-    lines.append("</div>")  # 关闭 thinking-actions
-    lines.append("</div>")  # 关闭 thinking-step
     return "\n".join(lines)
 
 
@@ -700,13 +679,6 @@ def _format_github_search_issues(tool_input: dict, tool_output: dict) -> str:
     if not results and not query:
         return ""
 
-    # Build the thinking step with search card inside
-    lines.append('<div class="thinking-step">')
-    lines.append('<div class="thinking-header">🔍 搜索操作</div>')
-    if query:
-        lines.append(f'<div class="thinking-text">正在搜索 GitHub Issues/PRs："{query}"</div>')
-    lines.append('<div class="thinking-actions">')
-
     lines.append('<div class="search-card">')
 
     if query:
@@ -735,8 +707,6 @@ def _format_github_search_issues(tool_input: dict, tool_output: dict) -> str:
         lines.append("</div>")
 
     lines.append("</div>")  # 关闭 search-card
-    lines.append("</div>")  # 关闭 thinking-actions
-    lines.append("</div>")  # 关闭 thinking-step
     return "\n".join(lines)
 
 
@@ -889,12 +859,8 @@ def _render_markdown(state: dict) -> str:
                     if is_final_summary:
                         summary_lines.append(content)
                     else:
-                        # 开始一个新的思考步骤块
-                        thinking_lines.append('<div class="thinking-step">')
-                        thinking_lines.append('<div class="thinking-header">💭 思考过程</div>')
-                        thinking_lines.append(f'<div class="thinking-text">{content}</div>')
-                        # 注意：不在这里关闭 div，让后续操作也包含在内
-                        thinking_lines.append('<div class="thinking-actions">')
+                        # 直接添加内容，不使用 thinking-step 包装
+                        thinking_lines.append(content)
                 continue
 
             tool_input = call.get("input", {})
@@ -1007,14 +973,7 @@ def _render_markdown(state: dict) -> str:
 
     # 构建最终输出：思考过程区块 + 结论区块
     output_lines = []
-    
-    # 关闭最后一个未关闭的步骤块
-    if thinking_lines:
-        # 检查是否有未关闭的步骤块（通过检查最后是否有 thinking-actions 开标签）
-        content = "\n".join(thinking_lines)
-        if '<div class="thinking-actions">' in content:
-            thinking_lines.append('</div>')  # 关闭 thinking-actions
-            thinking_lines.append('</div>')  # 关闭 thinking-step
+
     
     # 思考过程区块（可折叠）
     if thinking_lines:
