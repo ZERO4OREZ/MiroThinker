@@ -146,8 +146,17 @@ class OpenAIClient(BaseClient):
             if self.repetition_penalty != 1.0:
                 params["extra_body"]["repetition_penalty"] = self.repetition_penalty
 
-            if "deepseek-v3-1" in self.model_name or "MiroThinker" in self.model_name:
-                params["extra_body"]["thinking"] = {"type": "enabled"}
+            if "deepseek-v3-1" in self.model_name or "MiroThinker" in self.model_name or "mirothinker" in self.model_name.lower():
+                params["extra_body"]["thinking"] = {
+                    "type": "enabled",
+                    "budget_tokens": 12000
+                }
+
+            self.task_log.log_step(
+                "info",
+                "LLM | Request Params",
+                f"Model: {self.model_name}, Thinking: {params.get('extra_body', {}).get('thinking', 'Disabled')}"
+            )
 
             # auto-detect if we need to continue from the last assistant message
             if messages_for_llm and messages_for_llm[-1].get("role") == "assistant":
@@ -289,7 +298,21 @@ class OpenAIClient(BaseClient):
 
         # Extract LLM response text
         if llm_response.choices[0].finish_reason == "stop":
-            assistant_response_text = llm_response.choices[0].message.content or ""
+            message = llm_response.choices[0].message
+            # Log the full message object for debugging
+            self.task_log.log_step(
+                "info",
+                "LLM | Raw Message",
+                f"Message keys: {message.__dict__ if hasattr(message, '__dict__') else dir(message)}"
+            )
+            
+            assistant_response_text = message.content or ""
+            
+            # Check for reasoning_content (DeepSeek style)
+            reasoning_content = getattr(message, "reasoning_content", None)
+            if reasoning_content:
+                self.task_log.log_step("info", "LLM | Reasoning Found", "Found reasoning_content field")
+                assistant_response_text = f"<think>\n{reasoning_content}\n</think>\n\n{assistant_response_text}"
 
             message_history.append(
                 {"role": "assistant", "content": assistant_response_text}

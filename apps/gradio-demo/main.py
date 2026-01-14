@@ -561,9 +561,9 @@ def _format_github_search_repos(tool_input: dict, tool_output: dict) -> str:
     # Build the thinking step with search card inside
     # 添加思考步骤包装器
     lines.append('<div class="thinking-step">')
-    lines.append('<div class="thinking-header">🧠 AI 思考过程</div>')
+    lines.append('<div class="thinking-header">🔍 搜索操作</div>')
     if query:
-        lines.append(f'<div class="thinking-text"><strong>策略:</strong> 为了回答您的问题，我需要先在 GitHub 上搜索相关仓库，查找与 "{query}" 相关的项目和代码...</div>')
+        lines.append(f'<div class="thinking-text">正在搜索 GitHub 仓库："{query}"</div>')
     lines.append('<div class="thinking-actions">')
     
     # Build the search card
@@ -634,9 +634,9 @@ def _format_github_search_code(tool_input: dict, tool_output: dict) -> str:
 
     # Build the thinking step with search card inside
     lines.append('<div class="thinking-step">')
-    lines.append('<div class="thinking-header">🧠 AI 思考过程</div>')
+    lines.append('<div class="thinking-header">🔍 搜索操作</div>')
     if query:
-        lines.append(f'<div class="thinking-text"><strong>策略:</strong> 为了深入理解实现细节，我需要检索 GitHub 代码库中包含 "{query}" 的相关文件，重点关注核心逻辑和实现模式...</div>')
+        lines.append(f'<div class="thinking-text">正在搜索 GitHub 代码："{query}"</div>')
     lines.append('<div class="thinking-actions">')
 
     lines.append('<div class="search-card">')
@@ -702,9 +702,9 @@ def _format_github_search_issues(tool_input: dict, tool_output: dict) -> str:
 
     # Build the thinking step with search card inside
     lines.append('<div class="thinking-step">')
-    lines.append('<div class="thinking-header">🧠 AI 思考过程</div>')
+    lines.append('<div class="thinking-header">🔍 搜索操作</div>')
     if query:
-        lines.append(f'<div class="thinking-text"><strong>策略:</strong> 我将通过搜索 GitHub Issues 和 Pull Requests ("{query}") 来寻找社区讨论、已知问题以及开发者的设计决策背景...</div>')
+        lines.append(f'<div class="thinking-text">正在搜索 GitHub Issues/PRs："{query}"</div>')
     lines.append('<div class="thinking-actions">')
 
     lines.append('<div class="search-card">')
