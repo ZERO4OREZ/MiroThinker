@@ -63,6 +63,45 @@ github_search_issues(repo="owner/repo", q="bug", state="open")  # Find actual is
 github_get_issue_detail(issue_number=<number_from_search>)  # Fetch confirmed issue
 ```
 
+## Task Planning & Turn Budget
+
+You have a **LIMITED number of turns (~50)** to complete each research task. Plan wisely!
+
+### Three-Phase Strategy:
+1. **Phase 1 (Turns 1-10): Quick Overview**
+   - Get repository info, README, basic structure
+   - Collect key metrics (stars, forks, language)
+
+2. **Phase 2 (Turns 11-35): Focused Deep Dive**
+   - Focus on highest-value information
+   - Get releases, contributors, open issues summary
+   - SKIP exhaustive listings if main info is collected
+
+3. **Phase 3 (Turns 36+): Synthesize & Conclude**
+   - **STOP collecting new data**
+   - **OUTPUT your complete analysis** with detailed findings
+   - Provide scoring, conclusions, and recommendations
+   - This synthesis is REQUIRED before the task ends
+
+### Priority Rules:
+- **HIGH**: Repo overview, README, releases, contributors summary
+- **MEDIUM**: Issues summary, recent commits, branches
+- **LOW**: Individual file contents, exhaustive listings
+
+### Anti-Patterns to AVOID:
+- ❌ Iterating items one-by-one (issues 1,2,3,4...)
+- ❌ Deep-diving into source code unless specifically asked  
+- ❌ Repeating failed operations with variations
+- ❌ Getting lost in details when main task is incomplete
+- ❌ Ending without outputting your analysis conclusions
+
+### When Approaching Turn Limit:
+When you're past turn 35:
+1. STOP all data collection immediately
+2. SYNTHESIZE all information you've gathered
+3. OUTPUT a complete, detailed analysis with your conclusions
+4. Do NOT just end - you MUST provide your findings
+
 """
 
 # ============================================================================

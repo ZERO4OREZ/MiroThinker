@@ -1090,6 +1090,27 @@ class Orchestrator:
                 tool_result_for_llm = self.output_formatter.format_tool_result_for_user(
                     tool_result
                 )
+                
+                # Inject turn progress reminder when approaching limit
+                remaining_turns = max_turns - turn_count
+                if remaining_turns <= 15 and remaining_turns > 0:
+                    progress_hint = f"\n\n[⚠️ PROGRESS: {remaining_turns} turns remaining out of {max_turns}. "
+                    if remaining_turns <= 5:
+                        progress_hint += "FINAL PHASE: You MUST now synthesize all collected information and output your complete analysis with conclusions. Do not collect more data - focus on delivering your comprehensive findings.]"
+                    elif remaining_turns <= 10:
+                        progress_hint += "SYNTHESIS PHASE: Begin organizing your findings. Complete any critical data collection, then focus on analysis and conclusions.]"
+                    else:
+                        progress_hint += "Approaching limit. Prioritize high-value information and prepare for synthesis.]"
+                    
+                    # Handle both dict and string result formats
+                    if isinstance(tool_result_for_llm, dict):
+                        if "result" in tool_result_for_llm:
+                            tool_result_for_llm["result"] = str(tool_result_for_llm["result"]) + progress_hint
+                        else:
+                            tool_result_for_llm["progress_hint"] = progress_hint
+                    elif isinstance(tool_result_for_llm, str):
+                        tool_result_for_llm += progress_hint
+                
                 all_tool_results_content_with_id.append((call_id, tool_result_for_llm))
 
             if should_rollback_turn:

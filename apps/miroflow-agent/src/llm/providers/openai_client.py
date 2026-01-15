@@ -146,7 +146,10 @@ class OpenAIClient(BaseClient):
             if self.repetition_penalty != 1.0:
                 params["extra_body"]["repetition_penalty"] = self.repetition_penalty
 
-            if "deepseek-v3-1" in self.model_name or "MiroThinker" in self.model_name or "mirothinker" in self.model_name.lower():
+            if ("deepseek-v3-1" in self.model_name or 
+                "MiroThinker" in self.model_name or 
+                "mirothinker" in self.model_name.lower() or
+                "kimi" in self.model_name.lower() and "k2" in self.model_name.lower()):
                 params["extra_body"]["thinking"] = {
                     "type": "enabled",
                     "budget_tokens": 12000
