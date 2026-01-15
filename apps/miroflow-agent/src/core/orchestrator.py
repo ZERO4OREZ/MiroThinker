@@ -102,6 +102,7 @@ class Orchestrator:
         stream_queue: Optional[Any] = None,
         tool_definitions: Optional[List[Dict[str, Any]]] = None,
         sub_agent_tool_definitions: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+        summary_llm_config: Optional[Dict[str, str]] = None,
     ):
         """
         Initialize the orchestrator.
@@ -116,6 +117,7 @@ class Orchestrator:
             stream_queue: Optional async queue for streaming events
             tool_definitions: Pre-fetched tool definitions (optional)
             sub_agent_tool_definitions: Pre-fetched sub-agent tool definitions (optional)
+            summary_llm_config: Configuration for a separate LLM to generate final summary (optional)
         """
         self.main_agent_tool_manager = main_agent_tool_manager
         self.sub_agent_tool_managers = sub_agent_tool_managers
@@ -126,6 +128,7 @@ class Orchestrator:
         self.stream_queue = stream_queue
         self.tool_definitions = tool_definitions
         self.sub_agent_tool_definitions = sub_agent_tool_definitions
+        self.summary_llm_config = summary_llm_config
 
         # Initialize sub-agent tool list function
         self._list_sub_agent_tools = None
@@ -1160,22 +1163,80 @@ class Orchestrator:
         self.current_agent_id = await self.stream.start_agent("Final Summary")
         await self.stream.start_llm("Final Summary")
 
-        # Generate final answer using answer generator
-        (
-            final_summary,
-            final_boxed_answer,
-            failure_experience_summary,
-            usage_log,
-            message_history,
-        ) = await self.answer_generator.generate_and_finalize_answer(
-            system_prompt=system_prompt,
-            message_history=message_history,
-            tool_definitions=tool_definitions,
-            turn_count=turn_count,
-            task_description=task_description,
-            reached_max_turns=reached_max_turns,
-            save_callback=self._save_message_history,
-        )
+        # If summary_llm_config is provided, temporarily use a different LLM for final summary
+        original_llm_client = None
+        summary_llm_client = None
+        if self.summary_llm_config:
+            from ..llm.providers.openai_client import OpenAIClient
+            from omegaconf import OmegaConf
+
+            self.task_log.log_step(
+                "info",
+                "Main Agent | Final Summary",
+                f"Using SUMMARY_LLM: {self.summary_llm_config.get('model_name')} at {self.summary_llm_config.get('base_url')}",
+            )
+
+            # Create a modified config for the summary LLM
+            summary_cfg = OmegaConf.create({
+                "llm": {
+                    "provider": "qwen",  # Use OpenAI-compatible client
+                    "model_name": self.summary_llm_config.get("model_name"),
+                    "base_url": self.summary_llm_config.get("base_url"),
+                    "api_key": self.summary_llm_config.get("api_key", ""),
+                    "temperature": self.cfg.llm.get("temperature", 0.7),
+                    "top_p": self.cfg.llm.get("top_p", 0.95),
+                    "min_p": self.cfg.llm.get("min_p", 0.0),
+                    "top_k": self.cfg.llm.get("top_k", 50),
+                    "max_context_length": self.cfg.llm.get("max_context_length", 128000),
+                    "max_tokens": self.cfg.llm.get("max_tokens", 8192),
+                    "async_client": True,
+                    "repetition_penalty": self.cfg.llm.get("repetition_penalty", 1.0),
+                },
+                "agent": {
+                    "keep_tool_result": self.cfg.agent.get("keep_tool_result", -1),
+                },
+            })
+
+            try:
+                summary_llm_client = OpenAIClient(
+                    task_id=f"{task_id}-summary",
+                    cfg=summary_cfg,
+                    task_log=self.task_log,
+                )
+                # Temporarily replace the answer_generator's llm_client
+                original_llm_client = self.answer_generator.llm_client
+                self.answer_generator.llm_client = summary_llm_client
+            except Exception as e:
+                self.task_log.log_step(
+                    "warning",
+                    "Main Agent | Final Summary",
+                    f"Failed to create SUMMARY_LLM client: {e}. Falling back to main LLM.",
+                )
+                summary_llm_client = None
+
+        try:
+            # Generate final answer using answer generator
+            (
+                final_summary,
+                final_boxed_answer,
+                failure_experience_summary,
+                usage_log,
+                message_history,
+            ) = await self.answer_generator.generate_and_finalize_answer(
+                system_prompt=system_prompt,
+                message_history=message_history,
+                tool_definitions=tool_definitions,
+                turn_count=turn_count,
+                task_description=task_description,
+                reached_max_turns=reached_max_turns,
+                save_callback=self._save_message_history,
+            )
+        finally:
+            # Restore the original llm_client if we swapped it
+            if original_llm_client is not None:
+                self.answer_generator.llm_client = original_llm_client
+            if summary_llm_client is not None:
+                summary_llm_client.close()
 
         await self.stream.tool_call("show_text", {"text": final_boxed_answer})
         await self.stream.end_llm("Final Summary")

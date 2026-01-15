@@ -45,6 +45,7 @@ async def execute_task_pipeline(
     stream_queue: Optional[Any] = None,
     tool_definitions: Optional[List[Dict[str, Any]]] = None,
     sub_agent_tool_definitions: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    summary_llm_config: Optional[Dict[str, str]] = None,
 ):
     """
     Executes the full pipeline for a single task.
@@ -62,6 +63,7 @@ async def execute_task_pipeline(
         stream_queue: A queue for streaming the task execution (optional).
         tool_definitions: The definitions of the tools for the main agent (optional).
         sub_agent_tool_definitions: The definitions of the tools for the sub-agents (optional).
+        summary_llm_config: Configuration for a separate LLM to generate final summary (optional).
 
     Returns:
         A tuple of (final_summary, final_boxed_answer, log_file_path, failure_experience_summary):
@@ -108,6 +110,7 @@ async def execute_task_pipeline(
             stream_queue=stream_queue,
             tool_definitions=tool_definitions,
             sub_agent_tool_definitions=sub_agent_tool_definitions,
+            summary_llm_config=summary_llm_config,
         )
 
         (

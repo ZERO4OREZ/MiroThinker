@@ -127,6 +127,7 @@ _preload_cache = {
     "output_formatter": None,
     "tool_definitions": None,
     "sub_agent_tool_definitions": None,
+    "summary_llm_config": None,  # SUMMARY_LLM configuration for final summary
     "loaded": False,
 }
 _preload_lock = threading.Lock()
@@ -158,12 +159,26 @@ def _ensure_preloaded():
             for name, sub_agent_tool_manager in sub_agent_tool_managers.items()
         }
 
+        # Read SUMMARY_LLM configuration from environment
+        summary_llm_config = None
+        summary_llm_base_url = os.getenv("SUMMARY_LLM_BASE_URL")
+        summary_llm_model = os.getenv("SUMMARY_LLM_MODEL_NAME")
+        summary_llm_api_key = os.getenv("SUMMARY_LLM_API_KEY")
+        if summary_llm_base_url and summary_llm_model:
+            summary_llm_config = {
+                "base_url": summary_llm_base_url,
+                "model_name": summary_llm_model,
+                "api_key": summary_llm_api_key or "",
+            }
+            logger.info(f"SUMMARY_LLM configured: {summary_llm_model} at {summary_llm_base_url}")
+
         _preload_cache["cfg"] = cfg
         _preload_cache["main_agent_tool_manager"] = main_agent_tool_manager
         _preload_cache["sub_agent_tool_managers"] = sub_agent_tool_managers
         _preload_cache["output_formatter"] = output_formatter
         _preload_cache["tool_definitions"] = tool_definitions
         _preload_cache["sub_agent_tool_definitions"] = sub_agent_tool_definitions
+        _preload_cache["summary_llm_config"] = summary_llm_config
         _preload_cache["loaded"] = True
         logger.info("Pipeline components loaded successfully.")
 
@@ -313,6 +328,7 @@ async def stream_events_optimized(
                         sub_agent_tool_definitions=_preload_cache[
                             "sub_agent_tool_definitions"
                         ],
+                        summary_llm_config=_preload_cache["summary_llm_config"],
                     )
                 )
 
