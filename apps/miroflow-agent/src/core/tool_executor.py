@@ -123,6 +123,22 @@ class ToolExecutor:
                 + "_"
                 + arguments.get("info_to_extract", "")
             )
+        # GitHub tools (support both singular and plural forms)
+        elif tool_name in ("github_get_file_contents", "github_get_file_content"):
+            # Support both formats: owner+repo or combined "owner/repo" in repo field
+            owner = arguments.get("owner", "")
+            repo = arguments.get("repo", "")
+            path = arguments.get("path", "")
+            if not owner and "/" in repo:
+                # repo is in format "owner/repo"
+                return tool_name + "_" + repo + "/" + path
+            return tool_name + "_" + owner + "/" + repo + "/" + path
+        elif tool_name == "github_search_repos":
+            return tool_name + "_" + arguments.get("q", "")
+        elif tool_name == "github_search_code":
+            return tool_name + "_" + arguments.get("q", "")
+        elif tool_name == "github_search_issues":
+            return tool_name + "_" + arguments.get("q", "")
         return None
 
     def is_duplicate_query(self, cache_name: str, query_str: str) -> Tuple[bool, int]:
@@ -243,11 +259,34 @@ class ToolExecutor:
         Returns:
             True if the result indicates an error that should trigger rollback
         """
-        return (
-            str(result).startswith("Unknown tool:")
-            or str(result).startswith("Error executing tool")
-            or self.is_google_search_empty_result(tool_name, tool_result)
-        )
+        result_str = str(result)
+        
+        # Basic error checks
+        if result_str.startswith("Unknown tool:") or result_str.startswith("Error executing tool"):
+            return True
+        
+        # Google search empty result check
+        if self.is_google_search_empty_result(tool_name, tool_result):
+            return True
+        
+        # GitHub API error checks (404, rate limit, etc.)
+        if tool_name.startswith("github_"):
+            try:
+                import json
+                if isinstance(result, str):
+                    result_dict = json.loads(result)
+                else:
+                    result_dict = result
+                # Check for API errors
+                if result_dict.get("success") == False:
+                    error_msg = result_dict.get("error", "")
+                    # 404 errors mean the resource doesn't exist
+                    if "404" in error_msg or "Not Found" in error_msg:
+                        return True
+            except (json.JSONDecodeError, TypeError, AttributeError):
+                pass
+        
+        return False
 
     async def execute_single_tool_call(
         self,

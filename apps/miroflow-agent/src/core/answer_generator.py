@@ -500,28 +500,20 @@ class AnswerGenerator:
         usage_log = ""
 
         # CASE: Context management ON + reached max turns
-        # Skip answer generation entirely - any answer would be a blind guess
+        # Still generate answer based on collected information, but also record failure experience
         if context_management_enabled and reached_max_turns:
             self.task_log.log_step(
                 "info",
                 "Main Agent | Final Answer (Context Management Mode)",
-                "Reached max turns. Skipping answer generation to avoid blind guessing.",
+                "Reached max turns. Generating best-effort summary based on collected information.",
             )
 
-            if save_callback:
-                save_callback(system_prompt, message_history)
-
+            # Generate failure experience summary for potential retry
             failure_experience_summary = await self.generate_failure_summary(
                 system_prompt, message_history, tool_definitions, turn_count
             )
-
-            return (
-                "Task incomplete - reached maximum turns. Will retry with failure experience.",
-                FORMAT_ERROR_MESSAGE,
-                failure_experience_summary,
-                usage_log,
-                message_history,
-            )
+            
+            # Still generate answer based on what was collected (fall through to answer generation below)
 
         # ALL OTHER CASES: Generate final answer first
         (
