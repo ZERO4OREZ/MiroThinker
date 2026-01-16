@@ -279,13 +279,14 @@ class ToolExecutor:
                     result_dict = result
                 # Check for API errors
                 if result_dict.get("success") == False:
-                    error_msg = result_dict.get("error", "")
-                    # 404 errors mean the resource doesn't exist
-                    if "404" in error_msg or "Not Found" in error_msg:
-                        return True
+                    # We do NOT rollback on 404/API errors anymore. 
+                    # The LLM needs to see the error message to know the path is invalid.
+                    pass
             except (json.JSONDecodeError, TypeError, AttributeError):
                 pass
-        
+            
+            # 404 check removed from raw string analysis as well
+            
         return False
 
     async def execute_single_tool_call(

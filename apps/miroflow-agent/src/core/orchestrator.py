@@ -180,6 +180,113 @@ class Orchestrator:
         }
         self.task_log.save()
 
+    async def _perform_reflection(
+        self,
+        task_description: str,
+        message_history: List[Dict[str, Any]],
+        turn_count: int,
+        max_turns: int,
+    ) -> str:
+        """
+        Use a separate LLM (Kimi-K2-Thinking) to analyze progress and provide guidance.
+        
+        Returns:
+            A reflection message to inject into the main model's context
+        """
+        if not self.summary_llm_config:
+            return ""
+        
+        # Create reflection LLM client
+        from omegaconf import DictConfig
+        from ..llm.providers.openai_client import OpenAIClient
+        
+        reflection_cfg = DictConfig({
+            "llm": {
+                "provider": "qwen",
+                "model_name": self.summary_llm_config.get("model_name", "Kimi-K2-Thinking"),
+                "base_url": self.summary_llm_config.get("base_url"),
+                "api_key": self.summary_llm_config.get("api_key"),
+                "max_tokens": 2000,
+                "temperature": 0.3,
+                "top_p": 0.9,
+                "min_p": 0.0,
+                "top_k": 50,
+                "max_context_length": 65536,
+                "async_client": True,
+                "repetition_penalty": 1.0,
+            },
+            "agent": {
+                "keep_tool_result": 5,
+            }
+        })
+        
+        reflection_client = OpenAIClient(
+            task_id=self.task_log.task_id if self.task_log else "reflection",
+            cfg=reflection_cfg,
+            task_log=self.task_log,
+        )
+        
+        # Summarize recent tool results
+        recent_results = []
+        for msg in message_history[-10:]:
+            if msg.get("role") == "user" and isinstance(msg.get("content"), str):
+                content = msg["content"][:500]
+                if "result" in content.lower() or "success" in content.lower():
+                    recent_results.append(content[:200])
+        
+        progress_pct = (turn_count / max_turns) * 100
+        remaining = max_turns - turn_count
+        
+        reflection_prompt = f"""You are a task planning assistant. Analyze the current progress and provide guidance.
+
+TASK: {task_description}
+
+PROGRESS: Turn {turn_count}/{max_turns} ({progress_pct:.0f}% used, {remaining} turns remaining)
+
+RECENT ACTIVITY SUMMARY:
+{chr(10).join(recent_results[-3:]) if recent_results else "No recent tool results available"}
+
+Based on the progress, provide a SHORT (2-3 sentences) guidance message:
+1. If progress < 50%: Suggest what high-priority information to collect next
+2. If progress 50-70%: Remind to focus on essential items and start thinking about synthesis
+3. If progress 70-90%: Strong reminder to wrap up data collection and begin analysis
+4. If progress >= 90%: URGENT - must stop collecting and output final analysis NOW
+
+Output ONLY the guidance message, no explanation."""
+
+        try:
+            # Use _create_message to call the LLM
+            llm_response = await reflection_client._create_message(
+                system_prompt="You are a concise task planning assistant.",
+                messages_history=[{"role": "user", "content": reflection_prompt}],
+                tools_definitions=[],
+                keep_tool_result=0,
+            )
+            
+            if llm_response and hasattr(llm_response, 'choices') and llm_response.choices:
+                response = llm_response.choices[0].message.content
+                if response:
+                    self.task_log.log_step(
+                        "info",
+                        f"Main Agent | Turn: {turn_count} | Reflection",
+                        f"Reflection LLM guidance: {response[:100]}..."
+                    )
+                    self.task_log.log_step(
+                        "info",
+                        f"Main Agent | Turn: {turn_count} | Injection",
+                        "Injecting reflection message into Main Agent context."
+                    )
+                    return f"\n\n[📋 TASK GUIDANCE - Turn {turn_count}/{max_turns}]\n{response}"
+            
+        except Exception as e:
+            self.task_log.log_step(
+                "warning",
+                f"Main Agent | Turn: {turn_count} | Reflection Error",
+                f"Failed to get reflection: {str(e)}"
+            )
+        
+        return ""
+
     async def _handle_response_format_issues(
         self,
         assistant_response_text: str,
@@ -296,25 +403,23 @@ class Orchestrator:
         count = self.used_queries[cache_name][query_str]
 
         if count > 0:
-            if consecutive_rollbacks < self.MAX_CONSECUTIVE_ROLLBACKS - 1:
-                message_history.pop()
-                turn_count -= 1
-                consecutive_rollbacks += 1
-                self.task_log.log_step(
-                    "warning",
-                    f"{agent_name} | Turn: {turn_count} | Rollback",
-                    f"Duplicate query detected - tool: {tool_name}, query: '{query_str}', "
-                    f"previous count: {count}. Consecutive rollbacks: {consecutive_rollbacks}/"
-                    f"{self.MAX_CONSECUTIVE_ROLLBACKS}, Total attempts: {total_attempts}/{max_attempts}",
-                )
-                return True, True, turn_count, consecutive_rollbacks, message_history
-            else:
-                self.task_log.log_step(
-                    "warning",
-                    f"{agent_name} | Turn: {turn_count} | Allow Duplicate",
-                    f"Allowing duplicate query after {consecutive_rollbacks} rollbacks - "
-                    f"tool: {tool_name}, query: '{query_str}', previous count: {count}",
-                )
+            # DISABLE ROLLBACK for duplicates to prevent infinite loops (memory loss)
+            self.task_log.log_step(
+                "warning",
+                f"{agent_name} | Turn: {turn_count} | Duplicate Allowed",
+                f"Duplicate query detected but ALLOWED to prevent rollback loop - tool: {tool_name}, query: '{query_str}'",
+            )
+            return True, False, turn_count, consecutive_rollbacks, message_history
+            
+            # Old rollback logic disabled:
+            # if consecutive_rollbacks < self.MAX_CONSECUTIVE_ROLLBACKS - 1:
+            #    ...
+            #    self.task_log.log_step(
+            #        "warning",
+            #        f"{agent_name} | Turn: {turn_count} | Allow Duplicate",
+            #        f"Allowing duplicate query after {consecutive_rollbacks} rollbacks - "
+            #        f"tool: {tool_name}, query: '{query_str}', previous count: {count}",
+            #    )
 
         return False, False, turn_count, consecutive_rollbacks, message_history
 
@@ -765,6 +870,20 @@ class Orchestrator:
         initial_user_content, processed_task_desc = process_input(
             task_description, task_file_name
         )
+        
+        # Inject turn budget info into the initial message
+        max_turns = self.cfg.agent.main_agent.max_turns
+        turn_budget_info = f"""
+
+[⚡ IMPORTANT: TURN BUDGET]
+You have exactly {max_turns} turns to complete this task. Plan your work accordingly:
+- Turns 1-{int(max_turns*0.3)}: Collect high-priority information
+- Turns {int(max_turns*0.3)+1}-{int(max_turns*0.7)}: Complete data collection  
+- Turns {int(max_turns*0.7)+1}-{max_turns}: OUTPUT your complete analysis (MANDATORY)
+
+You will receive periodic guidance to help you stay on track.
+"""
+        initial_user_content += turn_budget_info
         message_history = [{"role": "user", "content": initial_user_content}]
 
         # Record initial user input
@@ -820,7 +939,30 @@ class Orchestrator:
                 )
                 break
 
+            # DEBUG LOG
+            self.task_log.log_step("info", f"Main Agent | Loop Start", f"Turn: {turn_count}, Config: {bool(self.summary_llm_config)}")
+
             self.task_log.save()
+
+            # Perform reflection every 3 turns (Aggressive for debugging)
+            if turn_count > 0 and turn_count % 3 == 0 and self.summary_llm_config:
+                reflection_msg = await self._perform_reflection(
+                    task_description=message_history[0].get("content", "") if message_history else "",
+                    message_history=message_history,
+                    turn_count=turn_count,
+                    max_turns=max_turns,
+                )
+                if reflection_msg:
+                    self.task_log.log_step(
+                        "info",
+                        f"Main Agent | Turn: {turn_count} | Injection",
+                        "Injecting reflection message into Main Agent context."
+                    )
+                    # Inject reflection as a user message so main model sees it
+                    message_history.append({
+                        "role": "user",
+                        "content": reflection_msg
+                    })
 
             # LLM call
             (
@@ -1090,19 +1232,31 @@ class Orchestrator:
                 tool_result_for_llm = self.output_formatter.format_tool_result_for_user(
                     tool_result
                 )
-                
-                # Inject turn progress reminder when approaching limit
+                # Inject progress reminder based on percentage (not hardcoded turns)
                 remaining_turns = max_turns - turn_count
-                if remaining_turns <= 15 and remaining_turns > 0:
-                    progress_hint = f"\n\n[⚠️ PROGRESS: {remaining_turns} turns remaining out of {max_turns}. "
-                    if remaining_turns <= 5:
-                        progress_hint += "FINAL PHASE: You MUST now synthesize all collected information and output your complete analysis with conclusions. Do not collect more data - focus on delivering your comprehensive findings.]"
-                    elif remaining_turns <= 10:
-                        progress_hint += "SYNTHESIS PHASE: Begin organizing your findings. Complete any critical data collection, then focus on analysis and conclusions.]"
-                    else:
-                        progress_hint += "Approaching limit. Prioritize high-value information and prepare for synthesis.]"
-                    
-                    # Handle both dict and string result formats
+                progress_pct = (turn_count / max_turns) * 100
+                
+                progress_hint = None
+                
+                # Self-reflection reminder every 10 turns
+                if turn_count > 0 and turn_count % 10 == 0 and progress_pct < 80:
+                    progress_hint = f"\n\n[📊 PROGRESS CHECK - Turn {turn_count}/{max_turns} ({progress_pct:.0f}% completed)]\nPlease reflect: ✓ What have you gathered? ○ What's still needed? ⚠ Any adjustments to your plan?"
+                
+                # Final phase reminder (last 20% of turns)
+                elif progress_pct >= 80:
+                    progress_hint = f"\n\n[🔴 FINAL PHASE - Turn {turn_count}/{max_turns} ({remaining_turns} remaining)]\nYou MUST now OUTPUT your complete analysis with findings, scoring, and conclusions. Do not collect more data."
+                
+                # Synthesis phase reminder (60-80% of turns)  
+                elif progress_pct >= 60:
+                    progress_hint = f"\n\n[🟡 SYNTHESIS PHASE - Turn {turn_count}/{max_turns} ({remaining_turns} remaining)]\nBegin organizing your findings. Complete critical data collection, then focus on analysis output."
+                
+                # Inject hint if applicable
+                if progress_hint:
+                    self.task_log.log_step(
+                        "info",
+                        f"Main Agent | Turn: {turn_count} | Progress Hint",
+                        f"Injected: {progress_hint[:80]}..."
+                    )
                     if isinstance(tool_result_for_llm, dict):
                         if "result" in tool_result_for_llm:
                             tool_result_for_llm["result"] = str(tool_result_for_llm["result"]) + progress_hint
